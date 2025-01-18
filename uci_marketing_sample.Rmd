@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+# Task 2: Import Libraries
+library(tidyverse)
+library(readxl)
+library(h2o)
+```
+```{r}
+# Task 3: Read the Excel Sheets
+path <- "UCI_bank_marketing.xlsx"
+sheets <- excel_sheets(path)
+```
+```{r}
+# Task 3.1: Explore Data in each Sheet
+sheets %>%
+  map(~ read_excel(path = path, sheet = .)) %>%
+  set_names(sheets)
+```
+```{r}
+# Task 3.2: Join Data by ID Column (VLOOKUP Equivalent)
+data_joined <- sheets[4:7] %>%
+  map(~ read_excel(path = path, sheet = .)) %>%
+  reduce(left_join)
+
+#check for class imbalance
+table(data_joined$TERM_DEPOSIT)
+```
+```{r}
+# Task 4: Start H2O Cluster
+#giving h2o cluster max 1gb memory
+h2o.init(max_mem_size = "1g") 
+```
+```{r}
+# Task 4.1: Data Preparation
+
+#convert the strings to factor
+data_joined <- data_joined %>%
+  mutate_if(is.character, as.factor)
+
+#convert data to h20frame
+train <- as.h2o(data_joined)
+
+#create list of predictor variables and response columns
+y <- "TERM_DEPOSIT" #train[,y] <- as.factor(train[,y])
+x <- setdiff(names(train), c(y, "ID"))
+#make sure to remove unique id columns
+
+
+
+```
+```{r}
+# Task 5: H2O AutoML Training
+aml <- h2o.automl(
+  x = x,
+  y = y,
+  training_frame = train,
+  max_runtime_secs = 600, #max_model = 20
+  balance_classes = TRUE #exclude_algos
+)
+
+
+```
+```{r}
+# Task 6: View AutoML Leaderboard
+
+lb <- aml@leaderboard
+print(lb, n = nrow(lb))
+
+```
+
+```{r}
+# 6.1 Ensemble Exploration ----
+
+#get model id of all models in leaderboard
+model_ids <- as.data.frame(aml@leaderboard$model_id)[,1]
+se <- h2o.getModel(grep("StackedEnsemble_AllModels", model_ids, value=TRUE)[1])
+
+metalearner <- h2o.getModel(se@model$metalearner$name)
+
+
+#check how much each is contributing
+h2o.varimp(metalearner)
+h2o.varimp_plot(metalearner)
+
+
+
+```
+
+```{r}
+
+#getting the top performer
+topPerformer <- h2o.getModel(grep("GBM", model_ids, value=TRUE)[1])
+h2o.varimp(topPerformer)
+h2o.varimp_plot(topPerformer)
+
+
+
+# Task 7: Baselearner Variable Importance 
+
+
+```
+
+```{r}
+
+```
